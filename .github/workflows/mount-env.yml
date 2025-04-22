@@ -1,0 +1,57 @@
+name: Mount env
+
+on:
+  workflow_call:
+
+env:
+  EXPECTED_REPO: tciberh/mkrBotFront
+
+jobs:
+  mount-env:
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ github.ref_name }}
+    steps:
+      - name: Check Integrity
+        id: checkIntegrity
+        if: github.repository	 != env.EXPECTED_REPO
+        run: echo "wrong repo:${{ github.repository }} expected:${{ env.EXPECTED_REPO }}" && exit 1
+      
+      - name: "Checkout"
+        uses: "actions/checkout@v4"
+        with:
+          repository: TCiberH/encryptSecret
+          token: ${{ secrets.CLONE_PAT }}
+      
+      - name: "Encrypt and apply env"
+        id: encryptApplyEnv
+        run: touch .env
+          && touch key.json
+          && curl --location -sS '${{ vars.REST_GITHUB_API }}/repos/${{ github.repository }}/environments/${{ github.ref_name }}/secrets/public-key' --header 'Authorization:Bearer ${{ secrets.SECRETS_PAT }}' | jq -r  >> key.json
+          && SECRET_KEY=$(jq -r .key key.json) 
+          && KEY_ID=$(jq -r .key_id key.json) 
+          && echo "SECRET_KEY=$SECRET_KEY" >> .env 
+          && touch .env.raw
+          && echo WORKSPACE=${{ secrets.WORKSPACE }} >> .env.raw
+          && echo APP_NAME=${{ vars.APP_NAME }} >> .env.raw
+          && echo NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID=${{ secrets.NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID }} >> .env.raw
+          && echo NEXT_PUBLIC_WALLET_CONNECT_PROJECT_NAME=${{ secrets.NEXT_PUBLIC_WALLET_CONNECT_PROJECT_NAME }} >> .env.raw
+          && echo NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }} >> .env.raw
+          && echo NEXT_PUBLIC_BASE_APP_URL=${{ secrets.NEXT_PUBLIC_BASE_APP_URL }} >> .env.raw
+          && echo NEXT_PUBLIC_API_KEY=${{ secrets.NEXT_PUBLIC_API_KEY }} >> .env.raw
+          && echo NEXT_PUBLIC_ALCHEMY_KEY=${{ secrets.NEXT_PUBLIC_ALCHEMY_KEY }} >> .env.raw
+          && echo PORTAINER_WEBHOOK_URL=${{ vars.PORTAINER_WEBHOOK_URL }} >> .env.raw
+          && corepack enable && yarn install && ENC_ENV=$(yarn start)
+          && touch encOut
+          && echo "encrypted_value=$ENC_ENV" >> encOut
+          && echo "key_id=$KEY_ID" >> encOut
+          && cat encOut >> $GITHUB_OUTPUT
+          
+      - name: Create secret in env
+        uses: juancolchete/batch-http-request@main
+        with:
+          url: "${{ vars.REST_GITHUB_API }}/repos/${{ github.repository }}/environments/${{ github.ref_name }}/secrets/ALL_ENV"
+          method: "PUT"
+          data: ${{ toJSON(steps.encryptApplyEnv.outputs) }}
+          customHeaders: '{"Authorization":"Bearer ${{ secrets.SECRETS_PAT }}"}'
+          preventFailureOnNoResponse: true

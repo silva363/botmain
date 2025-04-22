@@ -1,0 +1,21 @@
+name: CI
+on:
+  push:
+    branches: ["main","staging","dev"]
+
+jobs:
+  mount-env:
+    uses: tciberh/mkrBotFront/.github/workflows/mount-env.yml@main
+    secrets: inherit
+  test:
+    needs: mount-env
+    uses: tciberh/CI/.github/workflows/test.yml@main
+    secrets: inherit
+  env:
+    needs: [mount-env,test]
+    uses: tciberh/CI/.github/workflows/env.yml@main
+    secrets: inherit
+  docker:
+    needs: [mount-env,test,env]
+    uses: tciberh/CI/.github/workflows/docker.yml@main
+    secrets: inherit
